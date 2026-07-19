@@ -1,6 +1,12 @@
 import { ClaudeAgentRunner } from "@/community/anthropic";
+import { DeepSeekAgentRunner } from "@/community/deepseek";
 import { CodexAgentRunner } from "@/community/openai";
-import { DummyAgentRunner, MockAgentRunner, type AgentRunner } from "@/shared";
+import {
+  config,
+  DummyAgentRunner,
+  MockAgentRunner,
+  type AgentRunner,
+} from "@/shared";
 
 /**
  * Creates an agent runner based on the agent type.
@@ -13,6 +19,8 @@ export function createAgentRunner(agentType: string): AgentRunner {
       return new ClaudeAgentRunner();
     case "codex":
       return new CodexAgentRunner();
+    case "deepseek":
+      return new DeepSeekAgentRunner(config.agents.default.model);
     case "dummy":
       return new DummyAgentRunner();
     case "mock":
