@@ -13,6 +13,18 @@ import {
 
 const logger = createLogger("claude-agent-runner");
 
+type ClaudeProcessEnv = Record<string, string | undefined>;
+
+/**
+ * Runtime overrides for Claude Code-compatible providers.
+ */
+export interface ClaudeAgentRunnerOptions {
+  type?: string;
+  model?: string;
+  processName?: string;
+  env?: ClaudeProcessEnv;
+}
+
 /**
  * Error thrown when the agent runner is aborted.
  */
@@ -27,7 +39,18 @@ export class AgentAbortError extends Error {
  * The agent runner for Claude Code CLI.
  */
 export class ClaudeAgentRunner implements AgentRunner {
-  readonly type = "claude";
+  readonly type: string;
+
+  private readonly _model?: string;
+  private readonly _processName: string;
+  private readonly _env: ClaudeProcessEnv;
+
+  constructor(options: ClaudeAgentRunnerOptions = {}) {
+    this.type = options.type ?? "claude";
+    this._model = options.model;
+    this._processName = options.processName ?? "Claude Code";
+    this._env = options.env ?? {};
+  }
 
   async *stream(
     message: UserMessage,
@@ -43,7 +66,7 @@ export class ClaudeAgentRunner implements AgentRunner {
     const args = [
       "claude",
       ...(!isNew ? ["--resume", sessionId] : ["--session-id", sessionId]),
-      ...["--model", config.agents.default.model],
+      ...["--model", this._model ?? config.agents.default.model],
       ...["--output-format", "stream-json"],
       "--print",
       "--verbose",
@@ -51,10 +74,7 @@ export class ClaudeAgentRunner implements AgentRunner {
     ];
     const proc = Bun.spawn(args, {
       cwd: options.cwd,
-      env: {
-        ...Bun.env,
-        ANTHROPIC_API_KEY: "",
-      },
+      env: this._buildSpawnEnv(),
       stderr: "pipe",
     });
 
@@ -62,7 +82,10 @@ export class ClaudeAgentRunner implements AgentRunner {
     let aborted = false;
     const abortHandler = () => {
       aborted = true;
-      logger.info({ session_id: sessionId }, "killing Claude Code process");
+      logger.info(
+        { session_id: sessionId },
+        `killing ${this._processName} process`,
+      );
       proc.kill();
     };
     if (signal) {
@@ -134,8 +157,22 @@ export class ClaudeAgentRunner implements AgentRunner {
         parts.push(`Stderr:\n${stderrText.trim()}`);
       }
       const detail = parts.length > 0 ? `\n\n${parts.join("\n\n")}` : "";
-      throw new Error(`Claude Code exited with code ${exitCode}${detail}`);
+      throw new Error(
+        `${this._processName} exited with code ${exitCode}${detail}`,
+      );
     }
+  }
+
+  /**
+   * Builds the environment passed to the Claude Code child process.
+   * Provider-specific secrets are supplied only at process launch time.
+   */
+  protected _buildSpawnEnv(): ClaudeProcessEnv {
+    return {
+      ...Bun.env,
+      ANTHROPIC_API_KEY: "",
+      ...this._env,
+    };
   }
 
   private _parseStreamLine(
